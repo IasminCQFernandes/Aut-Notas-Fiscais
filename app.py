@@ -1,86 +1,3 @@
-# import pandas as pd
-
-# def verificar_existencia_e_status(arquivo_prefeitura, arquivo_uau):
-#     """
-#     Filtra documentos cancelados em 'prefeitura.xlsx', verifica a existência 
-#     em 'uau.xlsx', traduz o 'Status_nf' (0/1) para texto, e RENOMEIA as colunas 
-#     e os valores TRUE/FALSE para a exibição no terminal.
-#     """
-#     try:
-#         # 1. Leitura e Filtragem do 'prefeitura.xlsx'
-#         df_prefeitura = pd.read_excel(arquivo_prefeitura)
-#         df_cancelados = df_prefeitura[df_prefeitura['Situação Documento'] == 'Cancelado'][
-#             ['Número', 'Situação Documento']
-#         ].copy() 
-        
-#         if df_cancelados.empty:
-#             print("Nenhum documento cancelado foi encontrado em 'prefeitura.xlsx'.")
-#             return
-
-#         # 2. Leitura e Preparação do 'uau.xlsx'
-#         df_uau = pd.read_excel(arquivo_uau)
-        
-#         df_uau_cols = df_uau[['NumNfAux_nf', 'Status_nf']].copy()
-#         df_uau_cols.rename(columns={'NumNfAux_nf': 'Número'}, inplace=True)
-        
-#         # Mapeamento Status (0/1)
-#         status_map = {0: 'Normal', 1: 'Cancelado'}
-#         df_uau_cols['Status_uau'] = df_uau_cols['Status_nf'].astype(int).map(status_map)
-        
-#         df_uau_cols = df_uau_cols[['Número', 'Status_uau']]
-        
-#         # 3. Junção (Merge) dos dados
-#         df_resultado = pd.merge(
-#             df_cancelados,
-#             df_uau_cols,
-#             on='Número',
-#             how='left'
-#         )
-        
-#         # 4. Geração da coluna VERIFICADO e tratamento de valores ausentes
-        
-#         # Gera TRUE se Status_uau foi preenchido, FALSE se não (NaN)
-#         df_resultado['VERIFICADO'] = df_resultado['Status_uau'].notna()
-        
-#         # Preenche valores ausentes (NaN) no Status_uau por 'Não Encontrado'
-#         df_resultado['Status_uau'].fillna('Não Encontrado', inplace=True)
-        
-#         # --- NOVO PASSO: Mapear TRUE/FALSE para ENCONTRADO/NÃO ENCONTRADO ---
-#         existencia_map = {True: 'Encontrado', False: 'Não Encontrado'}
-#         # Aplica o mapeamento na coluna 'VERIFICADO'
-#         df_resultado['VERIFICADO'] = df_resultado['VERIFICADO'].map(existencia_map)
-
-
-#         # 5. Exibição no Terminal com Novos Nomes e Novos Valores
-#         print("\n--- Resultado da Verificação de Documentos Cancelados ---")
-        
-#         # Seleciona as colunas finais
-#         df_final = df_resultado[['Número', 'Situação Documento', 'VERIFICADO', 'Status_uau']]
-        
-#         # Renomeação das Colunas (Final)
-#         novos_nomes = {
-#             'Número': 'Número NF',
-#             'Situação Documento': 'Situação Prefeitura',
-#             'VERIFICADO': 'Existencia UAU',
-#             'Status_uau': 'Situação UAU'
-#         }
-#         df_final.rename(columns=novos_nomes, inplace=True)
-        
-#         print(df_final.to_string(index=False))
-
-#     except FileNotFoundError as e:
-#         print(f"ERRO: Um dos arquivos não foi encontrado. Detalhe: {e.filename}")
-#     except KeyError as e:
-#         print(f"ERRO: Uma das colunas não foi encontrada: {e}. Verifique se os nomes das colunas estão corretos.")
-#     except Exception as e:
-#         print(f"Ocorreu um erro inesperado: {e}")
-
-# # Nome dos seus arquivos
-# nome_prefeitura = 'prefeitura.xlsx'
-# nome_uau = 'uau.xlsx'
-
-# # Execução da função
-# verificar_existencia_e_status(nome_prefeitura, nome_uau)
 import streamlit as st
 import pandas as pd
 import io
@@ -238,13 +155,13 @@ st.markdown("Carregue as duas planilhas Excel para verificar a existência e o s
 col1, col2 = st.columns(2)
 with col1:
     uploaded_prefeitura = st.file_uploader(
-        "📤 1. Planilha da Prefeitura (prefeitura.xlsx)", 
+        "📤 1. Planilha da Prefeitura", 
         type=['xlsx'],
         key="prefeitura_uploader"
     )
 with col2:
     uploaded_uau = st.file_uploader(
-        "📤 2. Planilha UAU (uau.xlsx)", 
+        "📤 2. Planilha UAU", 
         type=['xlsx'],
         key="uau_uploader"
     )
