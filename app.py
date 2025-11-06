@@ -62,7 +62,7 @@ def enviar_email_smtp(remetente, senha, destinatarios, assunto, corpo_texto, cor
     except Exception as e:
         return False, f"Erro ao enviar o e-mail: {e}"
 
-# --- Função Principal de Processamento (MODIFICADA para Empresa_nf) ---
+# --- Função Principal de Processamento (CORRIGIDA: Remoção do .0 da Empresa UAU) ---
 
 @st.cache_data
 def processar_planilhas(uploaded_prefeitura, uploaded_uau):
@@ -85,11 +85,11 @@ def processar_planilhas(uploaded_prefeitura, uploaded_uau):
         return None, None, f"ERRO ao ler a planilha da Prefeitura: {e}"
 
 
-    # 2. Leitura e Preparação do 'uau.xlsx' (MODIFICADA para Empresa_nf)
+    # 2. Leitura e Preparação do 'uau.xlsx'
     try:
         df_uau = pd.read_excel(uploaded_uau)
         
-        # MODIFICAÇÃO: Incluindo 'Empresa_nf' na seleção de colunas do UAU
+        # Colunas do UAU: NumNfAux_nf, Status_nf, Empresa_nf
         df_uau_cols = df_uau[['NumNfAux_nf', 'Status_nf', 'Empresa_nf']].copy()
         df_uau_cols.rename(columns={'NumNfAux_nf': 'Número'}, inplace=True)
         
@@ -121,28 +121,44 @@ def processar_planilhas(uploaded_prefeitura, uploaded_uau):
     existencia_map = {True: 'ENCONTRADO', False: 'NÃO ENCONTRADO'}
     df_resultado['VERIFICADO'] = df_resultado['VERIFICADO'].map(existencia_map)
 
-    # 4.2. Coluna Situação UAU e Empresa UAU (Tratamento de Não Encontrado)
+    # 4.2. Coluna Situação UAU e Empresa UAU (Tratamento de String e Remoção do .0)
     df_resultado['Status_uau'].fillna('Não Encontrado', inplace=True)
-    df_resultado['Empresa_nf'].fillna('Não Encontrado', inplace=True) # Preenche valores NaN se a NF não for encontrada
     
-    # 5. Formatação Final da Saída (MODIFICADA para Empresa_nf)
+    # 1. Converter a coluna para string (object)
+    df_resultado['Empresa_nf'] = df_resultado['Empresa_nf'].astype(str)
+    
+    # 2. Substituir 'nan' (resultado da conversão de NaN para string) pelo texto 'Não Encontrado'
+    df_resultado['Empresa_nf'].replace(['nan', 'None', ''], 'Não Encontrado', inplace=True)
+    
+    # 3. NOVO: Remover o ".0" do final das strings que representam números inteiros
+    def remover_ponto_zero(valor):
+        # Garante que é uma string e não é 'Não Encontrado'
+        if isinstance(valor, str) and valor != 'Não Encontrado':
+            # Verifica se termina com '.0' (comumente gerado ao converter float para str)
+            if valor.endswith('.0'):
+                return valor[:-2] # Retorna a string exceto os últimos dois caracteres
+        return valor
+        
+    df_resultado['Empresa_nf'] = df_resultado['Empresa_nf'].apply(remover_ponto_zero)
+
+    # 5. Formatação Final da Saída 
     df_final = df_resultado[[
         'Número', 
         'Situação Documento', 
         'Data Emissão', 
         'VERIFICADO', 
         'Status_uau',
-        'Empresa_nf' # Adicionado aqui
+        'Empresa_nf'
     ]].copy()
     
-    # Renomeação das Colunas (MODIFICADA)
+    # Renomeação das Colunas
     novos_nomes = {
         'Número': 'Número NF',
         'Situação Documento': 'Situação Prefeitura',
         'Data Emissão': 'Data Emissão NF', 
         'VERIFICADO': 'Existencia UAU',
         'Status_uau': 'Situação UAU',
-        'Empresa_nf': 'Empresa UAU' # <-- Novo nome para a coluna
+        'Empresa_nf': 'Empresa UAU'
     }
     df_final.rename(columns=novos_nomes, inplace=True)
     
@@ -197,7 +213,7 @@ if uploaded_prefeitura and uploaded_uau:
         
         if not df_inconsistencia.empty:
             st.error(f"Encontrados **{len(df_inconsistencia)}** documentos em estado de inconsistência!")
-            # O st.dataframe exibirá as novas colunas
+            # O st.dataframe exibirá as colunas
             st.dataframe(df_inconsistencia, use_container_width=True)
             
             # --- PREPARAÇÃO DO EMAIL (CORPO HTML) ---
@@ -233,6 +249,7 @@ if uploaded_prefeitura and uploaded_uau:
             
             # Botão de download
             excel_buffer_inc = io.BytesIO()
+            # Usando o DataFrame diretamente, que agora tem a coluna Empresa UAU como string sem o .0.
             df_inconsistencia.to_excel(excel_buffer_inc, index=False, engine='openpyxl')
             excel_buffer_inc.seek(0)
             with col_inc_dl:
@@ -277,11 +294,12 @@ if uploaded_prefeitura and uploaded_uau:
         excel_buffer_full = io.BytesIO()
         df_final.to_excel(excel_buffer_full, index=False, engine='openpyxl')
         excel_buffer_full.seek(0)
-        st.download_button(
-            label="💾 Baixar Tabela Completa em Excel",
-            data=excel_buffer_full,
-            file_name="relatorio_cancelados_verificados_completo.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        with st.container():
+            st.download_button(
+                label="💾 Baixar Tabela Completa em Excel",
+                data=excel_buffer_full,
+                file_name="relatorio_cancelados_verificados_completo.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 else:
     st.info("👆 Por favor, carregue ambas as planilhas para iniciar a verificação.")
