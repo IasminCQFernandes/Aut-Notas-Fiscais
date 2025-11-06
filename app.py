@@ -25,7 +25,7 @@ except KeyError:
     DESTINATARIOS_PADRAO = []
 
 
-# --- Função de Envio de E-mail (SMTP) - ATUALIZADA PARA LISTA ---
+# --- Função de Envio de E-mail (SMTP) ---
 
 def enviar_email_smtp(remetente, senha, destinatarios, assunto, corpo_texto, corpo_html):
     """Envia um e-mail através de um servidor SMTP, com formato texto e HTML, para múltiplos destinatários."""
@@ -62,7 +62,7 @@ def enviar_email_smtp(remetente, senha, destinatarios, assunto, corpo_texto, cor
     except Exception as e:
         return False, f"Erro ao enviar o e-mail: {e}"
 
-# --- Função Principal de Processamento (Mantida) ---
+# --- Função Principal de Processamento (MODIFICADA para Empresa_nf) ---
 
 @st.cache_data
 def processar_planilhas(uploaded_prefeitura, uploaded_uau):
@@ -70,34 +70,38 @@ def processar_planilhas(uploaded_prefeitura, uploaded_uau):
     # 1. Leitura e Filtragem do 'prefeitura.xlsx'
     try:
         df_prefeitura = pd.read_excel(uploaded_prefeitura)
+        
+        # Colunas esperadas da Prefeitura: Número, Situação Documento, Data Emissão
         df_cancelados = df_prefeitura[df_prefeitura['Situação Documento'] == 'Cancelado'][
-            ['Número', 'Situação Documento']
+            ['Número', 'Situação Documento', 'Data Emissão'] 
         ].copy() 
         
         if df_cancelados.empty:
             return None, None, "Nenhum documento cancelado foi encontrado na planilha da Prefeitura."
 
-    except KeyError:
-        return None, None, "ERRO: A coluna 'Situação Documento' ou 'Número' não foi encontrada na planilha da Prefeitura."
+    except KeyError as e:
+        return None, None, f"ERRO: A coluna {e} ou outra coluna essencial não foi encontrada na planilha da Prefeitura. As colunas esperadas são: 'Número', 'Situação Documento' e 'Data Emissão'."
     except Exception as e:
         return None, None, f"ERRO ao ler a planilha da Prefeitura: {e}"
 
 
-    # 2. Leitura e Preparação do 'uau.xlsx'
+    # 2. Leitura e Preparação do 'uau.xlsx' (MODIFICADA para Empresa_nf)
     try:
         df_uau = pd.read_excel(uploaded_uau)
         
-        df_uau_cols = df_uau[['NumNfAux_nf', 'Status_nf']].copy()
+        # MODIFICAÇÃO: Incluindo 'Empresa_nf' na seleção de colunas do UAU
+        df_uau_cols = df_uau[['NumNfAux_nf', 'Status_nf', 'Empresa_nf']].copy()
         df_uau_cols.rename(columns={'NumNfAux_nf': 'Número'}, inplace=True)
         
         # Mapeamento Status (0/1)
         status_map = {0: 'Normal', 1: 'Cancelado'}
         df_uau_cols['Status_uau'] = df_uau_cols['Status_nf'].fillna(-1).astype(int).map(status_map)
         
-        df_uau_cols = df_uau_cols[['Número', 'Status_uau']]
+        # Selecionando as colunas finais do UAU
+        df_uau_cols = df_uau_cols[['Número', 'Status_uau', 'Empresa_nf']]
         
-    except KeyError:
-        return None, None, "ERRO: A coluna 'NumNfAux_nf' ou 'Status_nf' não foi encontrada na planilha UAU."
+    except KeyError as e:
+        return None, None, f"ERRO: A coluna {e} ou outra coluna essencial não foi encontrada na planilha UAU. As colunas esperadas são: 'NumNfAux_nf', 'Status_nf' e 'Empresa_nf'."
     except Exception as e:
         return None, None, f"ERRO ao ler a planilha UAU: {e}"
 
@@ -117,18 +121,28 @@ def processar_planilhas(uploaded_prefeitura, uploaded_uau):
     existencia_map = {True: 'ENCONTRADO', False: 'NÃO ENCONTRADO'}
     df_resultado['VERIFICADO'] = df_resultado['VERIFICADO'].map(existencia_map)
 
-    # 4.2. Coluna Situação UAU (Tratamento de Não Encontrado)
+    # 4.2. Coluna Situação UAU e Empresa UAU (Tratamento de Não Encontrado)
     df_resultado['Status_uau'].fillna('Não Encontrado', inplace=True)
-
-    # 5. Formatação Final da Saída
-    df_final = df_resultado[['Número', 'Situação Documento', 'VERIFICADO', 'Status_uau']].copy()
+    df_resultado['Empresa_nf'].fillna('Não Encontrado', inplace=True) # Preenche valores NaN se a NF não for encontrada
     
-    # Renomeação das Colunas
+    # 5. Formatação Final da Saída (MODIFICADA para Empresa_nf)
+    df_final = df_resultado[[
+        'Número', 
+        'Situação Documento', 
+        'Data Emissão', 
+        'VERIFICADO', 
+        'Status_uau',
+        'Empresa_nf' # Adicionado aqui
+    ]].copy()
+    
+    # Renomeação das Colunas (MODIFICADA)
     novos_nomes = {
         'Número': 'Número NF',
         'Situação Documento': 'Situação Prefeitura',
+        'Data Emissão': 'Data Emissão NF', 
         'VERIFICADO': 'Existencia UAU',
-        'Status_uau': 'Situação UAU'
+        'Status_uau': 'Situação UAU',
+        'Empresa_nf': 'Empresa UAU' # <-- Novo nome para a coluna
     }
     df_final.rename(columns=novos_nomes, inplace=True)
     
@@ -183,17 +197,18 @@ if uploaded_prefeitura and uploaded_uau:
         
         if not df_inconsistencia.empty:
             st.error(f"Encontrados **{len(df_inconsistencia)}** documentos em estado de inconsistência!")
+            # O st.dataframe exibirá as novas colunas
             st.dataframe(df_inconsistencia, use_container_width=True)
             
             # --- PREPARAÇÃO DO EMAIL (CORPO HTML) ---
             assunto = f"[Ação Necessária] Inconsistências de NF Canceladas ({len(df_inconsistencia)} documentos)"
             
-            # 1. Corpo em TEXTO PURO (Fallback)
+            # 1. Corpo em TEXTO PURO (Fallback) - Inclui as novas colunas automaticamente
             corpo_texto = "Prezados(as),\n\nForam detectadas as seguintes inconsistências em notas fiscais que estão 'Canceladas' na Prefeitura, mas 'Normais' (ativas) no sistema UAU. Favor verificar:\n\n"
             corpo_texto += df_inconsistencia.to_string(index=False)
             corpo_texto += f"\n\nAtenciosamente,\nRelatório Automático (Enviado por {REMETENTE_PADRAO})\nFavor não responder este e-mail, pois ele é gerado automaticamente.\n Favor responder ao e-mail: elzimar.mota@lcmconstrucao.com.br"
             
-            # 2. Corpo em HTML (Com a Tabela Formatada!)
+            # 2. Corpo em HTML (Com a Tabela Formatada!) - Inclui as novas colunas automaticamente
             tabela_html = df_inconsistencia.to_html(index=False) 
 
             # Template HTML
@@ -236,7 +251,7 @@ if uploaded_prefeitura and uploaded_uau:
                         success, message = enviar_email_smtp(
                             remetente=REMETENTE_PADRAO,
                             senha=SENHA_APP,
-                            destinatarios=DESTINATARIOS_PADRAO, # AGORA USANDO A LISTA DE DESTINATÁRIOS
+                            destinatarios=DESTINATARIOS_PADRAO, 
                             assunto=assunto,
                             corpo_texto=corpo_texto,
                             corpo_html=corpo_html 
@@ -254,6 +269,7 @@ if uploaded_prefeitura and uploaded_uau:
         
         # --- EXIBIÇÃO DO RESULTADO COMPLETO ---
         st.header("Tabela de Resultados Completos")
+        # O st.dataframe exibirá as novas colunas
         st.dataframe(df_final, use_container_width=True)
         st.success(f"Análise completa para **{len(df_final)}** documentos cancelados.")
         
