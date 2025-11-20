@@ -4,24 +4,26 @@ import io
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.utils import COMMASPACE # Importado para formatar a lista de destinatários
+from email.utils import COMMASPACE
 
 # --- Configurações SMTP (Lidas do st.secrets) ---
 try:
+    # Credenciais do Servidor
     SMTP_SERVER = st.secrets["smtp"]["servidor"]
     SMTP_PORT = st.secrets["smtp"]["porta"]
     REMETENTE_PADRAO = st.secrets["smtp"]["email_remetente"]
     SENHA_APP = st.secrets["smtp"]["senha_app"]
     
-    # LISTA DE DESTINATÁRIOS ATUALIZADA AQUI:
-    DESTINATARIOS_PADRAO = [
-        "iasmin.fernandes@lcmconstrucao.com.br", 
-        "grp.contabil@lcmconstrucao.com.br", 
-        "maria.eliza@lcmconstrucao.com.br"
-    ]
-except KeyError:
-    st.error("ERRO: As credenciais SMTP não foram configuradas corretamente em .streamlit/secrets.toml")
+    # Lista de Destinatários (Agora vinda do secrets)
+    # Certifique-se de que no secrets.toml isso esteja formatado como uma lista
+    DESTINATARIOS_PADRAO = st.secrets["smtp"]["destinatarios"]
+
+except KeyError as e:
+    st.error(f"ERRO: Configuração ausente no secrets.toml: {e}")
     SMTP_SERVER, SMTP_PORT, REMETENTE_PADRAO, SENHA_APP = "", 587, "", ""
+    DESTINATARIOS_PADRAO = []
+except Exception as e:
+    st.error(f"ERRO ao carregar secrets: {e}")
     DESTINATARIOS_PADRAO = []
 
 
@@ -62,7 +64,7 @@ def enviar_email_smtp(remetente, senha, destinatarios, assunto, corpo_texto, cor
     except Exception as e:
         return False, f"Erro ao enviar o e-mail: {e}"
 
-# --- Função Principal de Processamento (CORRIGIDA: Remoção do .0 da Empresa UAU) ---
+# --- Função Principal de Processamento ---
 
 @st.cache_data
 def processar_planilhas(uploaded_prefeitura, uploaded_uau):
@@ -171,7 +173,7 @@ def processar_planilhas(uploaded_prefeitura, uploaded_uau):
     
     return df_final, df_inconsistencia, None
 
-# --- Interface Streamlit (Mantida) ---
+# --- Interface Streamlit ---
 
 st.set_page_config(
     page_title="Validação de Documentos Cancelados",
@@ -219,16 +221,16 @@ if uploaded_prefeitura and uploaded_uau:
             # --- PREPARAÇÃO DO EMAIL (CORPO HTML) ---
             assunto = f"[Ação Necessária] Inconsistências de NF Canceladas ({len(df_inconsistencia)} documentos)"
             
-            # 1. Corpo em TEXTO PURO (Fallback) - Inclui as novas colunas automaticamente
+            # 1. Corpo em TEXTO PURO (Fallback)
             corpo_texto = "Prezados(as),\n\nForam detectadas as seguintes inconsistências em notas fiscais que estão 'Canceladas' na Prefeitura, mas 'Normais' (ativas) no sistema UAU. Favor verificar:\n\n"
             corpo_texto += df_inconsistencia.to_string(index=False)
             corpo_texto += f"\n\nAtenciosamente,\nRelatório Automático (Enviado por {REMETENTE_PADRAO})\nFavor não responder este e-mail, pois ele é gerado automaticamente.\n Favor responder ao e-mail: elzimar.mota@lcmconstrucao.com.br"
             
-            # 2. Corpo em HTML (Com a Tabela Formatada!) - Inclui as novas colunas automaticamente
+            # 2. Corpo em HTML (Com a Tabela Formatada!)
             tabela_html = df_inconsistencia.to_html(index=False) 
 
             # Template HTML
-            corpo_html = f"""\
+            corpo_html = f"""
             <html>
               <body>
                 <p>Prezados(as),</p>
@@ -249,7 +251,6 @@ if uploaded_prefeitura and uploaded_uau:
             
             # Botão de download
             excel_buffer_inc = io.BytesIO()
-            # Usando o DataFrame diretamente, que agora tem a coluna Empresa UAU como string sem o .0.
             df_inconsistencia.to_excel(excel_buffer_inc, index=False, engine='openpyxl')
             excel_buffer_inc.seek(0)
             with col_inc_dl:
@@ -263,21 +264,24 @@ if uploaded_prefeitura and uploaded_uau:
             
             # Botão de Enviar E-mail
             with col_inc_mail:
-                if st.button("📧 Enviar E-mail", use_container_width=True):
-                    with st.spinner('Enviando e-mail...'):
-                        success, message = enviar_email_smtp(
-                            remetente=REMETENTE_PADRAO,
-                            senha=SENHA_APP,
-                            destinatarios=DESTINATARIOS_PADRAO, 
-                            assunto=assunto,
-                            corpo_texto=corpo_texto,
-                            corpo_html=corpo_html 
-                        )
-                        
-                        if success:
-                            st.success(message)
-                        else:
-                            st.error(f"Falha ao enviar e-mail: {message}")
+                if st.button("📧 Enviar E-mail para Lista Padrão", use_container_width=True):
+                    if not DESTINATARIOS_PADRAO:
+                        st.error("A lista de destinatários está vazia. Verifique o secrets.toml.")
+                    else:
+                        with st.spinner(f'Enviando e-mail para {len(DESTINATARIOS_PADRAO)} destinatários...'):
+                            success, message = enviar_email_smtp(
+                                remetente=REMETENTE_PADRAO,
+                                senha=SENHA_APP,
+                                destinatarios=DESTINATARIOS_PADRAO, 
+                                assunto=assunto,
+                                corpo_texto=corpo_texto,
+                                corpo_html=corpo_html 
+                            )
+                            
+                            if success:
+                                st.success(message)
+                            else:
+                                st.error(f"Falha ao enviar e-mail: {message}")
 
         else:
             st.success("✅ Nenhuma inconsistência (Cancelado/Normal) encontrada!")
@@ -286,7 +290,6 @@ if uploaded_prefeitura and uploaded_uau:
         
         # --- EXIBIÇÃO DO RESULTADO COMPLETO ---
         st.header("Tabela de Resultados Completos")
-        # O st.dataframe exibirá as novas colunas
         st.dataframe(df_final, use_container_width=True)
         st.success(f"Análise completa para **{len(df_final)}** documentos cancelados.")
         
